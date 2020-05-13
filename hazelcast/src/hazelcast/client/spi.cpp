@@ -1054,10 +1054,10 @@ namespace hazelcast {
                 }
 
                 void ClientMembershipListener::handleMemberListEventV10(const std::vector<Member> &initialMembers) {
-                    std::map<std::string, Member> prevMembers;
+                    std::set<Member> prevMembers;
                     if (!members.empty()) {
                         for (const Member &member : members) {
-                            prevMembers[member.getUuid()] = member;
+                            prevMembers.insert(member);
                         }
                         members.clear();
                     }
@@ -1144,15 +1144,14 @@ namespace hazelcast {
                 }
 
                 std::vector<MembershipEvent>
-                ClientMembershipListener::detectMembershipEvents(std::map<std::string, Member> &prevMembers) {
+                ClientMembershipListener::detectMembershipEvents(std::set<Member> &prevMembers) {
                     std::vector<MembershipEvent> events;
 
                     const std::set<Member> &eventMembers = members;
 
                     std::vector<Member> newMembers;
                     for (const Member &member : members) {
-                        std::map<std::string, Member>::iterator formerEntry = prevMembers.find(
-                                member.getUuid());
+                        std::set<Member>::iterator formerEntry = prevMembers.find(member);
                         if (formerEntry != prevMembers.end()) {
                             prevMembers.erase(formerEntry);
                         } else {
@@ -1161,13 +1160,12 @@ namespace hazelcast {
                     }
 
                     // removal events should be added before added events
-                    typedef const std::map<std::string, Member> MemberMap;
-                    for (const MemberMap::value_type &member : prevMembers) {
-                        events.push_back(MembershipEvent(client.getCluster(), member.second,
+                    for (const Member &member : prevMembers) {
+                        events.push_back(MembershipEvent(client.getCluster(), member,
                                                          MembershipEvent::MEMBER_REMOVED,
                                                          std::vector<Member>(eventMembers.begin(),
                                                                              eventMembers.end())));
-                        const Address &address = member.second.getAddress();
+                        const Address &address = member.getAddress();
                         if (clusterService.getMember(address).get() == NULL) {
                             std::shared_ptr<connection::Connection> connection = connectionManager.getActiveConnection(
                                     address);

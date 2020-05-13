@@ -90,7 +90,7 @@ namespace hazelcast {
                     std::exception_ptr newTargetDisconnectedExceptionCausedByMemberLeftEvent(
                             const std::shared_ptr<connection::Connection> &connection);
 
-                    std::vector<MembershipEvent> detectMembershipEvents(std::map<std::string, Member> &prevMembers);
+                    std::vector<MembershipEvent> detectMembershipEvents(std::set<Member> &prevMembers);
 
                     void fireMembershipEvent(std::vector<MembershipEvent> &events);
 

@@ -2128,10 +2128,12 @@ namespace hazelcast {
                     }
 
                     void memberAdded(const MembershipEvent &event) {
+                        addedMembers.add(event.getMember());
                         _memberAdded.count_down();
                     }
 
                     void memberRemoved(const MembershipEvent &event) {
+                        removedMembers.add(event.getMember());
                         _memberRemoved.count_down();
                     }
 
@@ -2139,6 +2141,9 @@ namespace hazelcast {
                     void memberAttributeChanged(const MemberAttributeEvent &memberAttributeEvent) {
                         _attributeLatch.count_down();
                     }
+
+                    util::ConcurrentSet<Member> addedMembers;
+                    util::ConcurrentSet<Member> removedMembers;
 
                 private:
                     boost::latch &_memberAdded;
@@ -2325,6 +2330,109 @@ namespace hazelcast {
 }
 
 
+
+
+
+namespace hazelcast {
+    namespace client {
+        namespace test {
+            class ClientClusterRestartEventTest : public ClientTestSupport {
+            public:
+                ClientClusterRestartEventTest() {}
+
+            protected:
+
+                class SampleListener : public MembershipListener {
+                public:
+                    SampleListener(boost::latch &_memberAdded, boost::latch &_memberRemoved)
+                        : _memberAdded(_memberAdded), _memberRemoved(_memberRemoved) {
+                    }
+
+                    void memberAdded(const MembershipEvent &event) {
+                        addedMembers.add(event.getMember());
+                        _memberAdded.count_down();
+                    }
+
+                    void memberRemoved(const MembershipEvent &event) {
+                        removedMembers.add(event.getMember());
+                        _memberRemoved.count_down();
+                    }
+
+                  void memberAttributeChanged(const MemberAttributeEvent &memberAttributeEvent) {
+                  }
+
+                    util::ConcurrentSet<Member> addedMembers;
+                    util::ConcurrentSet<Member> removedMembers;
+
+                private:
+                    boost::latch &_memberAdded;
+                    boost::latch &_memberRemoved;
+                };
+
+            };
+
+            TEST_F(ClientClusterRestartEventTest, testMemberRestart) {
+                std::shared_ptr<HazelcastServer> instance = std::make_shared<HazelcastServer>(*g_srvFactory);
+                HazelcastClient hazelcastClient(getNewClient());
+                ASSERT_EQ(hazelcastClient.getCluster().getMembers().size(), 1);
+                Member oldMember = hazelcastClient.getCluster().getMembers()[0];
+                boost::latch memberAdded(1);
+                boost::latch memberRemoved(1);
+
+                SampleListener sampleListener(memberAdded, memberRemoved);
+
+                hazelcastClient.getCluster().addMembershipListener(&sampleListener);
+                instance->shutdown();
+                instance.reset(new HazelcastServer(*g_srvFactory));
+                assertOpenEventually(memberRemoved);
+                ASSERT_FALSE(sampleListener.removedMembers.add(oldMember));
+                assertOpenEventually(memberAdded);
+                remote::Member iMember = instance->getMember();
+                Member newMember {{iMember.host, iMember.port}, iMember.uuid, false, {}};
+                ASSERT_FALSE(sampleListener.addedMembers.add(newMember));
+
+                std::vector<Member> members = hazelcastClient.getCluster().getMembers();
+
+                ASSERT_EQ(1, members.size());
+                ASSERT_TRUE(members[0] == newMember);
+            }
+
+            TEST_F(ClientClusterRestartEventTest, testMultiMemberRestart) {
+                std::shared_ptr<HazelcastServer> instance1 = std::make_shared<HazelcastServer>(*g_srvFactory);
+                std::shared_ptr<HazelcastServer> instance2 = std::make_shared<HazelcastServer>(*g_srvFactory);
+                HazelcastClient hazelcastClient(getNewClient());
+                ASSERT_EQ(hazelcastClient.getCluster().getMembers().size(), 2);
+                Member oldMember1 = hazelcastClient.getCluster().getMembers()[0];
+                Member oldMember2 = hazelcastClient.getCluster().getMembers()[1];
+                boost::latch memberAdded(2);
+                boost::latch memberRemoved(2);
+
+                SampleListener sampleListener(memberAdded, memberRemoved);
+
+                hazelcastClient.getCluster().addMembershipListener(&sampleListener);
+                instance1->shutdown();
+                instance2->shutdown();
+                instance1.reset(new HazelcastServer(*g_srvFactory));
+                instance2.reset(new HazelcastServer(*g_srvFactory));
+                assertOpenEventually(memberRemoved);
+                ASSERT_FALSE(sampleListener.removedMembers.add(oldMember1));
+                ASSERT_FALSE(sampleListener.removedMembers.add(oldMember2));
+                assertOpenEventually(memberAdded);
+                remote::Member iMember1 = instance1->getMember();
+                remote::Member iMember2 = instance2->getMember();
+                Member newMember1 {{iMember1.host, iMember1.port}, iMember1.uuid, false, {}};
+                Member newMember2 {{iMember2.host, iMember2.port}, iMember2.uuid, false, {}};
+                ASSERT_FALSE(sampleListener.addedMembers.add(newMember1));
+                ASSERT_FALSE(sampleListener.addedMembers.add(newMember2));
+                std::vector<Member> members = hazelcastClient.getCluster().getMembers();
+
+                ASSERT_EQ(2, members.size());
+                ASSERT_TRUE(std::find(members.begin(), members.end(), newMember1) != members.end());
+                ASSERT_TRUE(std::find(members.begin(), members.end(), newMember2) != members.end());
+            }
+        }
+    }
+}
 
 
 
