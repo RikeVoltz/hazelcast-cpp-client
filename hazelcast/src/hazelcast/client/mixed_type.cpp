@@ -118,7 +118,7 @@ namespace hazelcast {
                 typedef std::vector<serialization::pimpl::Data> DATA_VECTOR;
                 serialization::pimpl::SerializationService &serializationService = getContext().getSerializationService();
                 size_t numElements = 0;
-                for (const DATA_VECTOR::value_type data : proxy::IQueueImpl::drainToData((size_t) maxElements)) {
+                for (const DATA_VECTOR::value_type &data : proxy::IQueueImpl::drainToData((size_t) maxElements)) {
                     elements.push_back(TypedData(std::unique_ptr<serialization::pimpl::Data>(
                             new serialization::pimpl::Data(data)), serializationService));
                     ++numElements;
